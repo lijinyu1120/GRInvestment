@@ -1,0 +1,1384 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>金雨投资 - 私募债券基金投资平台</title>
+    <script src="https://sdk.amazonaws.com/js/aws-sdk-2.1.24.min.js"></script>
+    <script src="https://unpkg.com/amazon-cognito-identity-js@6.3.12/dist/amazon-cognito-identity.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="aws-config.js"></script>
+    <script src="portfolio.js"></script>
+    <script src="price-service.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #0a1929 0%, #102a47 100%);
+            color: #fff;
+            min-height: 100vh;
+            padding: 20px;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        /* Subtle golden rain animation for dashboard */
+        body::before {
+            content: '';
+            position: fixed;
+            top: -100px;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image:
+                radial-gradient(1px 1px at 20px 30px, #c9a961, transparent),
+                radial-gradient(1px 1px at 40px 70px, #dcc984, transparent),
+                radial-gradient(1px 1px at 90px 40px, #c9a961, transparent),
+                radial-gradient(1px 1px at 130px 80px, #dcc984, transparent);
+            background-repeat: repeat;
+            background-size: 300px 150px;
+            animation: goldenRain 15s linear infinite;
+            opacity: 0.05;
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        @keyframes goldenRain {
+            0% { transform: translateY(-100px); }
+            100% { transform: translateY(100vh); }
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            position: relative;
+        }
+
+        .header-main {
+            margin-bottom: 30px;
+        }
+
+        .header-main h1 {
+            font-size: 3.5em;
+            margin-bottom: 15px;
+            color: #c9a961;
+            text-shadow:
+                1px 1px 2px rgba(0, 0, 0, 0.3),
+                0 0 5px rgba(201, 169, 97, 0.2);
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+
+        .header-subtitle {
+            font-size: 1.2em;
+            color: #a8d8ff;
+            font-weight: 600;
+            letter-spacing: 1px;
+        }
+
+        .header-user {
+            position: absolute;
+            top: 0;
+            right: 0;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 12px 20px;
+            border-radius: 25px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .user-email {
+            font-size: 0.9em;
+            color: #a8d8ff;
+        }
+
+        .logout-btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 20px;
+            background: linear-gradient(45deg, #c9a961, #b08a4a);
+            color: #fff;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .logout-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(201, 169, 97, 0.4);
+        }
+
+        .portfolio-summary {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border-radius: 20px;
+            padding: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            margin-bottom: 30px;
+        }
+
+        .portfolio-stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 25px;
+        }
+
+        .stat-card {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 20px;
+            padding: 25px 20px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .stat-card h3 {
+            font-size: 1em;
+            color: #a8d8ff;
+            margin-bottom: 15px;
+            font-weight: 500;
+        }
+
+        .stat-value {
+            font-size: 2.5em;
+            font-weight: bold;
+            margin-bottom: 8px;
+            line-height: 1;
+        }
+
+        .stat-value.positive { color: #4ade80; }
+        .stat-value.negative { color: #f87171; }
+        .stat-value.neutral { color: #fff; }
+
+        .stat-change {
+            font-size: 0.95em;
+            color: #a8d8ff;
+            font-weight: 400;
+        }
+
+        /* Special styling for gain/loss card */
+        .stat-card.gain-loss {
+            background: linear-gradient(135deg, rgba(74, 222, 128, 0.1), rgba(34, 197, 94, 0.05));
+            border-color: rgba(74, 222, 128, 0.3);
+        }
+
+        .stat-card.gain-loss.negative {
+            background: linear-gradient(135deg, rgba(248, 113, 113, 0.1), rgba(239, 68, 68, 0.05));
+            border-color: rgba(248, 113, 113, 0.3);
+        }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+
+        .holdings-section {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border-radius: 20px;
+            padding: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+        }
+
+        .section-header h2 {
+            font-size: 1.8em;
+            color: #a8d8ff;
+        }
+
+        .add-stock-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            background: linear-gradient(45deg, #c9a961, #b08a4a);
+            color: #fff;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .add-stock-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(201, 169, 97, 0.4);
+        }
+
+        .holdings-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .holdings-table th {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px 10px;
+            text-align: left;
+            font-size: 0.9em;
+            color: #a8d8ff;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .holdings-table td {
+            padding: 15px 10px;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.3);
+        }
+
+        .holdings-table tr:hover {
+            background: rgba(0, 0, 0, 0.3);
+        }
+
+        .symbol {
+            font-weight: bold;
+            color: #fff;
+        }
+
+        .company-name {
+            font-size: 0.8em;
+            color: #a8d8ff;
+        }
+
+        .price-positive { color: #4ade80; }
+        .price-negative { color: #f87171; }
+        .price-neutral { color: #fff; }
+
+        .transactions-section {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border-radius: 20px;
+            padding: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .transaction-item {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .transaction-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+
+        .transaction-type {
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            font-weight: 600;
+        }
+
+        .transaction-type.buy {
+            background: rgba(74, 222, 128, 0.2);
+            color: #4ade80;
+        }
+
+        .transaction-type.sell {
+            background: rgba(248, 113, 113, 0.2);
+            color: #f87171;
+        }
+
+        .transaction-details {
+            font-size: 0.9em;
+            color: #a8d8ff;
+        }
+
+        .loading {
+            text-align: center;
+            color: #a8d8ff;
+            font-size: 1.2em;
+            margin: 50px 0;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 50px 20px;
+            color: #a8d8ff;
+        }
+
+        .empty-state h3 {
+            margin-bottom: 15px;
+            font-size: 1.5em;
+        }
+
+        .empty-state p {
+            margin-bottom: 20px;
+        }
+
+        .fund-info-card {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .fund-metric {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .fund-metric:last-child {
+            margin-bottom: 0;
+        }
+
+        .metric-label {
+            color: #a8d8ff;
+            font-size: 0.9em;
+        }
+
+        .metric-value {
+            color: #fff;
+            font-weight: 600;
+        }
+
+        /* Mobile-First Responsive Design */
+        
+        /* Extra Small Mobile Devices (320px - 480px) */
+        @media (max-width: 480px) {
+            body {
+                padding: 10px;
+                overflow-x: hidden;
+            }
+            
+            .container {
+                max-width: 100%;
+                padding: 0;
+            }
+            
+            /* Mobile Header Layout */
+            .header {
+                margin-bottom: 20px;
+            }
+            
+            .header-main h1 {
+                font-size: 2.2em;
+                margin-bottom: 10px;
+            }
+            
+            .header-subtitle {
+                font-size: 0.9em;
+                line-height: 1.4;
+            }
+            
+            .header-user {
+                position: static;
+                justify-content: center;
+                margin-top: 20px;
+                padding: 10px 15px;
+            }
+            
+            .user-email {
+                font-size: 0.8em;
+            }
+            
+            /* Single Column Portfolio Stats */
+            .portfolio-summary {
+                padding: 20px 15px;
+                margin-bottom: 20px;
+            }
+            
+            .portfolio-stats {
+                grid-template-columns: 1fr;
+                gap: 15px;
+            }
+            
+            .stat-card {
+                padding: 15px;
+            }
+            
+            .stat-card h3 {
+                font-size: 0.85em;
+                margin-bottom: 8px;
+            }
+            
+            .stat-value {
+                font-size: 1.5em;
+            }
+            
+            .stat-change {
+                font-size: 0.8em;
+            }
+            
+            /* Mobile Section Layout */
+            .main-grid {
+                gap: 20px;
+                margin-bottom: 20px;
+            }
+            
+            .holdings-section,
+            .transactions-section {
+                padding: 20px 15px;
+            }
+            
+            .section-header {
+                flex-direction: column;
+                gap: 12px;
+                text-align: center;
+                margin-bottom: 20px;
+            }
+            
+            .section-header h2 {
+                font-size: 1.4em;
+            }
+            
+            /* Mobile Chart Container */
+            #chartContainer {
+                height: 280px !important;
+                margin: 0 -5px;
+            }
+            
+            /* Mobile Bond Data Table */
+            #bondDataTable {
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                margin: 0 -15px;
+                padding: 0 15px;
+            }
+            
+            #bondDataTable .holdings-table {
+                min-width: 600px;
+                font-size: 0.85em;
+            }
+            
+            #bondDataTable .holdings-table th,
+            #bondDataTable .holdings-table td {
+                padding: 8px 6px;
+                white-space: nowrap;
+            }
+            
+            /* Mobile Bond Metrics - Stack Vertically */
+            #bondDataTable div[style*="grid-template-columns: repeat(3, 1fr)"] {
+                display: grid !important;
+                grid-template-columns: 1fr !important;
+                gap: 10px !important;
+            }
+            
+            #bondDataTable div[style*="grid-template-columns: repeat(4, 1fr)"] {
+                display: grid !important;
+                grid-template-columns: repeat(2, 1fr) !important;
+                gap: 8px !important;
+            }
+            
+            /* Touch-Friendly Buttons */
+            .add-stock-btn,
+            .logout-btn {
+                min-height: 44px;
+                padding: 12px 20px;
+                font-size: 14px;
+                border-radius: 8px;
+                width: 100%;
+                max-width: 200px;
+            }
+            
+            .logout-btn {
+                max-width: 120px;
+            }
+            
+            /* Mobile Loading and Empty States */
+            .loading {
+                font-size: 1em;
+                margin: 30px 0;
+                padding: 0 20px;
+            }
+            
+            .empty-state {
+                padding: 30px 15px;
+            }
+            
+            .empty-state h3 {
+                font-size: 1.2em;
+            }
+            
+            .empty-state p {
+                font-size: 0.9em;
+            }
+        }
+        
+        /* Small Mobile Devices (481px - 600px) */
+        @media (min-width: 481px) and (max-width: 600px) {
+            body {
+                padding: 15px;
+            }
+            
+            .header-main h1 {
+                font-size: 2.5em;
+            }
+            
+            .header-user {
+                position: static;
+                justify-content: center;
+                margin-top: 15px;
+            }
+            
+            .portfolio-stats {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 15px;
+            }
+            
+            .stat-value {
+                font-size: 1.6em;
+            }
+            
+            #chartContainer {
+                height: 320px !important;
+            }
+            
+            .section-header {
+                flex-direction: column;
+                gap: 10px;
+                text-align: center;
+            }
+            
+            .add-stock-btn,
+            .logout-btn {
+                min-height: 44px;
+                padding: 12px 20px;
+            }
+            
+            /* Bond table horizontal scroll */
+            #bondDataTable {
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+            
+            #bondDataTable .holdings-table {
+                min-width: 700px;
+            }
+        }
+        
+        /* Medium screens where overlap can occur (601px - 1200px) */
+        @media (min-width: 601px) and (max-width: 1200px) {
+            .header-user {
+                position: static;
+                justify-content: center;
+                margin-top: 20px;
+                width: 100%;
+            }
+            
+            .header-main {
+                margin-bottom: 10px;
+            }
+            
+            .header-main h1 {
+                font-size: 2.8em;
+            }
+        }
+        
+        /* Tablets (769px - 1024px) */
+        @media (min-width: 769px) and (max-width: 1024px) {
+            .header-user {
+                position: static;
+                justify-content: center;
+                margin-top: 15px;
+            }
+            
+            .portfolio-stats {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 20px;
+            }
+            
+            .stat-value {
+                font-size: 1.8em;
+            }
+            
+            #chartContainer {
+                height: 380px !important;
+            }
+            
+            /* Bond table with better spacing */
+            #bondDataTable .holdings-table {
+                font-size: 0.9em;
+            }
+            
+            #bondDataTable div[style*="grid-template-columns: repeat(4, 1fr)"] {
+                display: grid !important;
+                grid-template-columns: repeat(2, 1fr) !important;
+                gap: 12px !important;
+            }
+        }
+        
+        /* Large Tablets (769px - 1024px) */
+        @media (min-width: 769px) and (max-width: 1024px) {
+            .portfolio-stats {
+                grid-template-columns: repeat(4, 1fr);
+            }
+            
+            .stat-value {
+                font-size: 2em;
+            }
+            
+            #chartContainer {
+                height: 420px !important;
+            }
+        }
+        
+        /* Landscape Mobile Orientation */
+        @media (max-height: 500px) and (orientation: landscape) {
+            .header {
+                margin-bottom: 15px;
+            }
+            
+            .header-left h1 {
+                font-size: 1.5em;
+                margin-bottom: 5px;
+            }
+            
+            .header-left p {
+                font-size: 0.8em;
+            }
+            
+            .portfolio-summary {
+                padding: 15px;
+                margin-bottom: 15px;
+            }
+            
+            .portfolio-stats {
+                grid-template-columns: repeat(4, 1fr);
+                gap: 10px;
+            }
+            
+            .stat-card {
+                padding: 10px;
+            }
+            
+            .stat-value {
+                font-size: 1.2em;
+            }
+            
+            #chartContainer {
+                height: 200px !important;
+            }
+            
+            .holdings-section,
+            .transactions-section {
+                padding: 15px;
+            }
+        }
+        
+        /* High DPI Mobile Displays */
+        @media (-webkit-min-device-pixel-ratio: 2) and (max-width: 768px) {
+            .holdings-table {
+                font-size: 0.9em;
+            }
+            
+            .stat-card h3 {
+                font-size: 0.8em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="header-main">
+                <h1>Gold Rain Investment</h1>
+                <div class="header-subtitle">Professional Private Debt Investment Platform</div>
+            </div>
+            <div class="header-user">
+                <div class="user-email" id="userEmail">加载中...</div>
+                <button class="logout-btn" onclick="signOut()">退出</button>
+            </div>
+        </div>
+
+        <div id="loadingMessage" class="loading">
+正在加载您的投资组合...
+        </div>
+
+        <div id="mainContent" style="display: none;">
+            <!-- Portfolio Summary -->
+            <div class="portfolio-summary">
+                <div class="portfolio-stats">
+                    <div class="stat-card">
+                        <h3>持仓</h3>
+                        <div class="stat-value neutral" id="holdingsCount">0</div>
+                        <div class="stat-change">Quantity</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>价格</h3>
+                        <div class="stat-value neutral" id="unitPrice">$0.00</div>
+                        <div class="stat-change">Unit Price</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>净值</h3>
+                        <div class="stat-value neutral" id="totalValue">$0.00</div>
+                        <div class="stat-change">Net amount</div>
+                    </div>
+                    <div class="stat-card gain-loss">
+                        <h3>盈亏</h3>
+                        <div class="stat-value neutral" id="totalGainLoss">$0.00</div>
+                        <div class="stat-change" id="totalGainLossPercent" style="font-size: 1.1em; font-weight: 600; margin-top: 5px;">0.00%</div>
+                        <div style="font-size: 0.85em; color: #a8d8ff; margin-top: 3px;">Gain/Loss</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="main-grid">
+                <!-- Price Chart Section -->
+                <div class="transactions-section">
+                    <div class="section-header">
+                        <h2>价格走势图</h2>
+                        <button class="add-stock-btn" onclick="updatePricesManually()" id="updatePricesBtn">🔄 刷新数据</button>
+                    </div>
+                    
+                    <div id="chartContainer" style="height: 450px; display: flex; justify-content: center; align-items: center;">
+                        <canvas id="priceChart" style="max-width: 100%; max-height: 100%;"></canvas>
+                    </div>
+                </div>
+
+                <!-- Simplified Bond Data Section -->
+                <div class="holdings-section">
+                    <div id="bondDataTable">
+                        <div class="empty-state">
+                            <h3>正在加载债券数据...</h3>
+                            <p>正在获取最新债券价格信息</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        let portfolioManager = null;
+        let priceService = null;
+        let priceUpdater = null;
+        let priceChart = null;
+
+        // Initialize the application
+        async function initializeApp() {
+            try {
+                console.log('🚀 Starting application initialization...');
+                // Initialize AWS services
+                await awsServices.initialize();
+                console.log('✅ AWS services initialized');
+                
+                // Check authentication
+                try {
+                    const isAuthenticated = await awsServices.isAuthenticated();
+                    console.log('🔐 Authentication check:', isAuthenticated);
+                    if (!isAuthenticated) {
+                        console.log('❌ User not authenticated, redirecting to login');
+                        window.location.href = 'login.html';
+                        return;
+                    }
+                } catch (authError) {
+                    console.error('❌ Authentication check failed:', authError);
+                    console.log('🔄 Redirecting to login due to auth error');
+                    window.location.href = 'login.html';
+                    return;
+                }
+
+                // Get user info
+                let userAttributes;
+                try {
+                    userAttributes = await awsServices.getUserAttributes();
+                    console.log('👤 User attributes:', userAttributes);
+                } catch (attrError) {
+                    console.warn('⚠️ Failed to get user attributes, trying session data:', attrError);
+                    // Fallback: get user info from session token
+                    const session = await awsServices.getUserSession();
+                    const payload = session.getIdToken().payload;
+                    userAttributes = {
+                        sub: payload.sub,
+                        email: payload.email,
+                        email_verified: payload.email_verified
+                    };
+                    console.log('👤 User attributes from session:', userAttributes);
+                }
+                document.getElementById('userEmail').textContent = userAttributes.email;
+
+                // Update credentials with current session FIRST
+                const session = await awsServices.getUserSession();
+                await awsServices.updateCredentials(session.getIdToken().getJwtToken());
+                console.log('✅ Credentials updated');
+
+                // Wait a bit for credentials to be ready
+                await new Promise(resolve => setTimeout(resolve, 1000));
+
+                // Initialize portfolio manager AFTER credentials are ready
+                console.log('📊 Initializing portfolio manager...');
+                portfolioManager = new PortfolioManager(awsServices);
+                await portfolioManager.initialize();
+                console.log('✅ Portfolio manager initialized');
+
+                // Initialize price service
+                priceService = new PriceDataService(awsServices);
+                
+                // Initialize price updater
+                priceUpdater = new PriceUpdater(priceService, portfolioManager);
+                priceUpdater.setOnPriceUpdate(() => {
+                    loadPortfolioData(); // Refresh UI when prices update
+                });
+
+                // Load and display portfolio data
+                await loadPortfolioData();
+                
+                // Initialize price chart first
+                initializePriceChart();
+                
+                // Load market data with fund details (including chart update)
+                await loadMarketDataWithDetails();
+                
+                // Load bond data table
+                await loadBondDataTable();
+                
+                // Start automatic price updates (every 5 minutes)
+                priceUpdater.start(5);
+
+                // Hide loading and show main content
+                document.getElementById('loadingMessage').style.display = 'none';
+                document.getElementById('mainContent').style.display = 'block';
+
+            } catch (error) {
+                console.error('❌ Failed to initialize app:', error);
+                console.error('Error details:', {
+                    message: error.message,
+                    stack: error.stack,
+                    name: error.name
+                });
+                
+                // Show specific error message
+                let errorMsg = 'Failed to load your portfolio. ';
+                if (error.message.includes('S3')) {
+                    errorMsg += 'S3 access issue. Check your bucket permissions.';
+                } else if (error.message.includes('Cognito')) {
+                    errorMsg += 'Authentication issue. Please sign out and sign in again.';
+                } else if (error.message.includes('portfolio')) {
+                    errorMsg += 'Portfolio data format issue.';
+                } else {
+                    errorMsg += 'Error: ' + error.message;
+                }
+                
+                showError(errorMsg);
+            }
+        }
+
+        // Load and display portfolio data
+        async function loadPortfolioData() {
+            try {
+                // Get current bond price first
+                let currentBondPrice = null;
+                if (priceService) {
+                    try {
+                        const bondPriceData = await priceService.getLatestBondPrice();
+                        if (bondPriceData && bondPriceData.midPrice) {
+                            currentBondPrice = bondPriceData.midPrice;
+                        }
+                    } catch (error) {
+                        console.warn('Failed to get current bond price:', error);
+                    }
+                }
+
+                // Update portfolio summary with current price
+                const summary = portfolioManager.getPortfolioSummary(currentBondPrice);
+                updatePortfolioSummary(summary);
+
+                // Update holdings table with current price
+                const holdings = portfolioManager.getHoldingsArray(currentBondPrice);
+                updateHoldingsDisplay(holdings);
+
+                // Update fund details
+                updateFundDetailsDisplay();
+
+            } catch (error) {
+                console.error('Failed to load portfolio data:', error);
+                showError('Failed to load portfolio data.');
+            }
+        }
+
+        // Load and display market data
+        async function loadMarketData() {
+            try {
+                if (!priceService) return;
+
+                const marketSummary = await priceService.getMarketSummary();
+                updateMarketDataDisplay(marketSummary);
+
+            } catch (error) {
+                console.error('Failed to load market data:', error);
+                const marketDataContent = document.getElementById('marketDataContent');
+                marketDataContent.innerHTML = `
+                    <div class="empty-state">
+                        <h3>Market data unavailable</h3>
+                        <p>Unable to fetch latest bond prices</p>
+                    </div>
+                `;
+            }
+        }
+
+        // Update portfolio summary display
+        function updatePortfolioSummary(summary) {
+            // Get bond holding data from portfolio
+            const bondHolding = portfolioManager.portfolio.holdings['BOND'];
+            if (!bondHolding) {
+                console.warn('No BOND holding found in portfolio');
+                return;
+            }
+
+            const shares = bondHolding.shares || 0;
+            const avgCost = bondHolding.avgCost || 0;
+
+            // Get current bond price for unit price display
+            let currentBondPrice = 0;
+            if (priceService) {
+                try {
+                    const bondPriceData = priceService.getLatestBondPrice();
+                    if (bondPriceData && bondPriceData.midPrice) {
+                        currentBondPrice = bondPriceData.midPrice;
+                    }
+                } catch (error) {
+                    console.warn('Failed to get current bond price for display:', error);
+                }
+            }
+
+            // If no current price available, use the summary's calculated current price
+            if (currentBondPrice === 0 && summary.totalValue > 0 && shares > 0) {
+                currentBondPrice = summary.totalValue / shares;
+            }
+
+            // Calculate values based on portfolio structure
+            // Bond prices are displayed as 94.5 but actual calculation uses 0.945 (divided by 100)
+            const actualCurrentPrice = currentBondPrice / 100; // Convert display price to actual price
+            const actualAvgCost = avgCost / 100; // Convert display cost to actual cost
+            
+            const netAmount = shares * actualCurrentPrice; // Current market value (净值)
+            const totalCost = shares * actualAvgCost; // Original investment cost
+            const gainLoss = netAmount - totalCost; // Profit/Loss (盈亏)
+            const gainLossPercent = totalCost > 0 ? (gainLoss / totalCost) * 100 : 0;
+
+            // Display values
+            document.getElementById('holdingsCount').textContent = shares.toLocaleString();
+            document.getElementById('unitPrice').textContent = `$${currentBondPrice.toFixed(2)}`; // Display original price
+            document.getElementById('totalValue').textContent = `$${netAmount.toFixed(2)}`;
+            document.getElementById('totalGainLoss').textContent = `$${gainLoss.toFixed(2)}`;
+            document.getElementById('totalGainLossPercent').textContent = `${gainLossPercent.toFixed(2)}%`;
+
+            // Update colors and card styling based on gain/loss
+            const gainLossElement = document.getElementById('totalGainLoss');
+            const gainLossPercentElement = document.getElementById('totalGainLossPercent');
+            const gainLossCard = gainLossElement.closest('.stat-card');
+            
+            if (gainLoss > 0) {
+                gainLossElement.className = 'stat-value positive';
+                gainLossPercentElement.style.color = '#4ade80';
+                gainLossPercentElement.style.fontSize = '1.1em';
+                gainLossPercentElement.style.fontWeight = '600';
+                gainLossCard.className = 'stat-card gain-loss';
+            } else if (gainLoss < 0) {
+                gainLossElement.className = 'stat-value negative';
+                gainLossPercentElement.style.color = '#f87171';
+                gainLossPercentElement.style.fontSize = '1.1em';
+                gainLossPercentElement.style.fontWeight = '600';
+                gainLossCard.className = 'stat-card gain-loss negative';
+            } else {
+                gainLossElement.className = 'stat-value neutral';
+                gainLossPercentElement.style.color = '#fff';
+                gainLossPercentElement.style.fontSize = '1.1em';
+                gainLossPercentElement.style.fontWeight = '600';
+                gainLossCard.className = 'stat-card gain-loss';
+            }
+
+            console.log('Portfolio Summary Updated:', {
+                shares,
+                displayAvgCost: avgCost,
+                actualAvgCost: actualAvgCost,
+                displayCurrentPrice: currentBondPrice,
+                actualCurrentPrice: actualCurrentPrice,
+                netAmount,
+                totalCost,
+                gainLoss,
+                gainLossPercent: gainLossPercent.toFixed(2) + '%'
+            });
+        }
+
+        // Update holdings display for single fund - now handled by bond data table
+        function updateHoldingsDisplay(holdings) {
+            // This function is now handled by loadBondDataTable()
+            // Keep for compatibility but redirect to bond table
+            console.log('Holdings display redirected to bond data table');
+        }
+
+        // Update fund details display - now empty since we removed the fund details section
+        function updateFundDetailsDisplay() {
+            // This function is kept for compatibility but does nothing
+            // Fund details are now shown in the bond data table
+        }
+
+        // Update market data display - now empty since we removed market data section
+        function updateMarketDataDisplay(marketSummary) {
+            // This function is kept for compatibility but does nothing
+            // Market data is now shown in the bond data table
+        }
+
+        // Manual price update
+        async function updatePricesManually() {
+            if (!priceUpdater) return;
+            
+            const button = document.getElementById('updatePricesBtn');
+            const originalText = button.textContent;
+            
+            try {
+                button.textContent = '🔄 Updating...';
+                button.disabled = true;
+                
+                await priceUpdater.updateNow();
+                await loadMarketDataWithDetails();
+                
+                showSuccess('Prices updated successfully!');
+            } catch (error) {
+                console.error('Failed to update prices:', error);
+                showError('Failed to update prices: ' + error.message);
+            } finally {
+                button.textContent = originalText;
+                button.disabled = false;
+            }
+        }
+
+        // Fund data refresh functionality
+        async function refreshFundData() {
+            try {
+                await loadPortfolioData();
+                await loadMarketDataWithDetails();
+                showSuccess('Fund data refreshed successfully!');
+            } catch (error) {
+                console.error('Failed to refresh fund data:', error);
+                showError('Failed to refresh fund data: ' + error.message);
+            }
+        }
+
+        // Utility functions
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('zh-CN', {
+                style: 'currency',
+                currency: 'CNY'
+            }).format(amount);
+        }
+
+        function showError(message) {
+            alert('错误: ' + message);
+        }
+
+        function showSuccess(message) {
+            alert('成功: ' + message);
+        }
+
+        function signOut() {
+            awsServices.signOut();
+        }
+
+        // Enhanced load market data with fund details update
+        async function loadMarketDataWithDetails() {
+            try {
+                // Only update chart if price service is available
+                if (priceService) {
+                    await updatePriceChart();
+                } else {
+                    console.log('Price service not ready, chart update will be called later');
+                }
+            } catch (error) {
+                console.error('Failed to load market data with details:', error);
+            }
+        }
+
+        // Initialize price chart
+        function initializePriceChart() {
+            try {
+                const chartElement = document.getElementById('priceChart');
+                if (!chartElement) {
+                    console.error('Chart element not found');
+                    return;
+                }
+                
+                const ctx = chartElement.getContext('2d');
+                if (!ctx) {
+                    console.error('Cannot get chart context');
+                    return;
+                }
+                
+                priceChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: '中间价',
+                            data: [],
+                            borderColor: '#c9a961',
+                            backgroundColor: 'rgba(201, 169, 97, 0.1)',
+                            borderWidth: 3,
+                            fill: true,
+                            tension: 0.4,
+                            pointBackgroundColor: '#c9a961',
+                            pointBorderColor: '#dcc984',
+                            pointBorderWidth: 2,
+                            pointRadius: 4,
+                            pointHoverRadius: 6
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: {
+                                labels: {
+                                    color: '#fff'
+                                }
+                            },
+                            title: {
+                                display: true,
+                                text: '债券价格走势',
+                                color: '#a8d8ff',
+                                font: {
+                                    size: 16
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                ticks: {
+                                    color: '#a8d8ff',
+                                    maxTicksLimit: 6,
+                                    autoSkip: true,
+                                    maxRotation: 0
+                                },
+                                grid: {
+                                    color: 'rgba(255, 255, 255, 0.1)'
+                                }
+                            },
+                            y: {
+                                ticks: {
+                                    color: '#a8d8ff'
+                                },
+                                grid: {
+                                    color: 'rgba(255, 255, 255, 0.1)'
+                                }
+                            }
+                        }
+                    }
+                });
+                
+                console.log('Price chart initialized successfully');
+            } catch (error) {
+                console.error('Failed to initialize price chart:', error);
+                priceChart = null;
+            }
+        }
+
+        // Update price chart with bond data from AWS service
+        async function updatePriceChart() {
+            try {
+                if (!priceChart) {
+                    console.warn('Price chart not available');
+                    return;
+                }
+                
+                if (!priceService) {
+                    console.warn('Price service not available, skipping chart update');
+                    return;
+                }
+                
+                const bondHistory = await priceService.getBondPriceHistory(30);
+                if (!bondHistory || bondHistory.length === 0) {
+                    console.warn('No bond history data available from service');
+                    return;
+                }
+                
+                const labels = bondHistory.map(item => {
+                    const date = new Date(item.timestamp);
+                    return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
+                });
+                
+                const buyPrices = bondHistory.map(item => item.buyPrice);
+                const midPrices = bondHistory.map(item => item.midPrice);
+                const sellPrices = bondHistory.map(item => item.sellPrice);
+                
+                if (priceChart && priceChart.data) {
+                    priceChart.data.labels = labels;
+                    priceChart.data.datasets[0].data = midPrices;
+                    
+                    priceChart.update();
+                    console.log('Price chart updated successfully with', bondHistory.length, 'data points');
+                }
+            } catch (error) {
+                console.error('Failed to update price chart:', error);
+            }
+        }
+
+        // Load bond data table from AWS service
+        async function loadBondDataTable() {
+            try {
+                const bondDataTable = document.getElementById('bondDataTable');
+                bondDataTable.innerHTML = `
+                    <div class="empty-state">
+                        <h3>正在加载债券数据...</h3>
+                        <p>正在获取最新债券价格信息</p>
+                    </div>
+                `;
+
+                if (!priceService) {
+                    throw new Error('Price service not available');
+                }
+
+                const currentData = await priceService.getCompleteBondData();
+                if (!currentData) {
+                    throw new Error('No valid bond data found');
+                }
+                
+                // Create simplified bond data layout
+                const tableHtml = `
+                    <div style="text-align: center; margin-bottom: 30px;">
+                        <h2 style="color: #a8d8ff; margin-bottom: 15px; font-size: 1.8em;">最新债券价格数据</h2>
+                        <div style="color: #a8d8ff; font-size: 1em; margin-bottom: 30px;">
+                            更新时间: ${currentData.timestamp}
+                        </div>
+                        
+                        <!-- Main Price Header -->
+                        <div style="background: rgba(0, 0, 0, 0.4); border-radius: 15px; padding: 20px; margin-bottom: 25px;">
+                            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; text-align: center;">
+                                <div>
+                                    <div style="color: #a8d8ff; font-size: 1.1em; margin-bottom: 10px;">买价</div>
+                                    <div style="color: #fff; font-size: 2.2em; font-weight: bold;">
+                                        ${parseFloat(currentData['价格_买价']).toFixed(3)}
+                                    </div>
+                                </div>
+                                <div>
+                                    <div style="color: #a8d8ff; font-size: 1.1em; margin-bottom: 10px;">中间价</div>
+                                    <div style="color: #fff; font-size: 2.2em; font-weight: bold;">
+                                        ${parseFloat(currentData['价格_中间价']).toFixed(3)}
+                                    </div>
+                                </div>
+                                <div>
+                                    <div style="color: #a8d8ff; font-size: 1.1em; margin-bottom: 10px;">卖价</div>
+                                    <div style="color: #fff; font-size: 2.2em; font-weight: bold;">
+                                        ${parseFloat(currentData['价格_卖价']).toFixed(3)}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Three Cards Layout -->
+                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;">
+                            <!-- Yield Card -->
+                            <div style="background: rgba(0, 0, 0, 0.3); border-radius: 15px; padding: 25px;">
+                                <h3 style="color: #a8d8ff; margin-bottom: 20px; font-size: 1.3em;">收益率 (%)</h3>
+                                <div style="margin-bottom: 15px;">
+                                    <div style="color: #a8d8ff; font-size: 0.9em; margin-bottom: 5px;">买价</div>
+                                    <div style="color: #fff; font-size: 1.4em; font-weight: bold;">
+                                        ${parseFloat(currentData['到期收益率(YTM)_买价']).toFixed(2)}
+                                    </div>
+                                </div>
+                                <div style="margin-bottom: 15px;">
+                                    <div style="color: #a8d8ff; font-size: 0.9em; margin-bottom: 5px;">中间价</div>
+                                    <div style="color: #fff; font-size: 1.4em; font-weight: bold;">
+                                        ${parseFloat(currentData['到期收益率(YTM)_中间价']).toFixed(2)}
+                                    </div>
+                                </div>
+                                <div>
+                                    <div style="color: #a8d8ff; font-size: 0.9em; margin-bottom: 5px;">卖价</div>
+                                    <div style="color: #fff; font-size: 1.4em; font-weight: bold;">
+                                        ${parseFloat(currentData['到期收益率(YTM)_卖价']).toFixed(2)}
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Change Amount Card -->
+                            <div style="background: rgba(0, 0, 0, 0.3); border-radius: 15px; padding: 25px;">
+                                <h3 style="color: #a8d8ff; margin-bottom: 20px; font-size: 1.3em;">涨跌额</h3>
+                                <div style="margin-bottom: 15px;">
+                                    <div style="color: #a8d8ff; font-size: 0.9em; margin-bottom: 5px;">买价</div>
+                                    <div style="color: ${parseFloat(currentData['涨跌额_买价'] || 0) >= 0 ? '#4ade80' : '#f87171'}; font-size: 1.4em; font-weight: bold;">
+                                        ${parseFloat(currentData['涨跌额_买价'] || 0) >= 0 ? '+' : ''}${parseFloat(currentData['涨跌额_买价'] || 0).toFixed(3)}
+                                    </div>
+                                </div>
+                                <div style="margin-bottom: 15px;">
+                                    <div style="color: #a8d8ff; font-size: 0.9em; margin-bottom: 5px;">中间价</div>
+                                    <div style="color: ${parseFloat(currentData['涨跌额_中间价'] || 0) >= 0 ? '#4ade80' : '#f87171'}; font-size: 1.4em; font-weight: bold;">
+                                        ${parseFloat(currentData['涨跌额_中间价'] || 0) >= 0 ? '+' : ''}${parseFloat(currentData['涨跌额_中间价'] || 0).toFixed(3)}
+                                    </div>
+                                </div>
+                                <div>
+                                    <div style="color: #a8d8ff; font-size: 0.9em; margin-bottom: 5px;">卖价</div>
+                                    <div style="color: ${parseFloat(currentData['涨跌额_卖价'] || 0) >= 0 ? '#4ade80' : '#f87171'}; font-size: 1.4em; font-weight: bold;">
+                                        ${parseFloat(currentData['涨跌额_卖价'] || 0) >= 0 ? '+' : ''}${parseFloat(currentData['涨跌额_卖价'] || 0).toFixed(3)}
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Duration Card -->
+                            <div style="background: rgba(0, 0, 0, 0.3); border-radius: 15px; padding: 25px;">
+                                <h3 style="color: #a8d8ff; margin-bottom: 20px; font-size: 1.3em;">久期</h3>
+                                <div style="margin-bottom: 15px;">
+                                    <div style="color: #a8d8ff; font-size: 0.9em; margin-bottom: 5px;">买价</div>
+                                    <div style="color: #fff; font-size: 1.4em; font-weight: bold;">
+                                        ${parseFloat(currentData['修正久期_买价']).toFixed(2)}
+                                    </div>
+                                </div>
+                                <div style="margin-bottom: 15px;">
+                                    <div style="color: #a8d8ff; font-size: 0.9em; margin-bottom: 5px;">中间价</div>
+                                    <div style="color: #fff; font-size: 1.4em; font-weight: bold;">
+                                        ${parseFloat(currentData['修正久期_中间价']).toFixed(2)}
+                                    </div>
+                                </div>
+                                <div>
+                                    <div style="color: #a8d8ff; font-size: 0.9em; margin-bottom: 5px;">卖价</div>
+                                    <div style="color: #fff; font-size: 1.4em; font-weight: bold;">
+                                        ${parseFloat(currentData['修正久期_卖价']).toFixed(2)}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                bondDataTable.innerHTML = tableHtml;
+                
+            } catch (error) {
+                console.error('Failed to load bond data:', error);
+                const bondDataTable = document.getElementById('bondDataTable');
+                bondDataTable.innerHTML = `
+                    <div class="empty-state">
+                        <h3>加载失败</h3>
+                        <p>无法加载债券数据: ${error.message}</p>
+                        <button class="add-stock-btn" onclick="loadBondDataTable()" style="margin-top: 15px;">重试</button>
+                    </div>
+                `;
+            }
+        }
+
+        // Initialize app when page loads
+        document.addEventListener('DOMContentLoaded', initializeApp);
+    </script>
+</body>
+</html>

@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>金雨投资 - 私募债券基金投资平台</title>
+    <script src="https://sdk.amazonaws.com/js/aws-sdk-2.1.24.min.js"></script>
+    <script src="https://unpkg.com/amazon-cognito-identity-js@6.3.12/dist/amazon-cognito-identity.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #0a1929 0%, #102a47 100%);
+            color: #fff;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Golden rain animation */
+        body::before {
+            content: '';
+            position: absolute;
+            top: -100px;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image:
+                radial-gradient(2px 2px at 20px 30px, #c9a961, transparent),
+                radial-gradient(2px 2px at 40px 70px, #dcc984, transparent),
+                radial-gradient(1px 1px at 90px 40px, #c9a961, transparent),
+                radial-gradient(1px 1px at 130px 80px, #dcc984, transparent),
+                radial-gradient(2px 2px at 160px 30px, #c9a961, transparent);
+            background-repeat: repeat;
+            background-size: 200px 100px;
+            animation: goldenRain 10s linear infinite;
+            opacity: 0.1;
+            pointer-events: none;
+        }
+
+        @keyframes goldenRain {
+            0% { transform: translateY(-100px); }
+            100% { transform: translateY(100vh); }
+        }
+
+        .login-container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border-radius: 20px;
+            padding: 40px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            width: 100%;
+            max-width: 400px;
+        }
+
+        .login-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .login-header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            background: linear-gradient(45deg, #c9a961, #dcc984, #fff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-shadow: 0 0 20px rgba(201, 169, 97, 0.3);
+        }
+
+        .login-header p {
+            color: #a8d8ff;
+            font-size: 1.1em;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #a8d8ff;
+            font-weight: 500;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 12px 16px;
+            border: none;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            backdrop-filter: blur(10px);
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            background: rgba(255, 255, 255, 0.2);
+            box-shadow: 0 0 0 2px rgba(100, 116, 139, 0.5);
+        }
+
+        .form-group input::placeholder {
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        .login-btn {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 8px;
+            background: linear-gradient(45deg, #c9a961, #b08a4a);
+            color: #fff;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 15px;
+        }
+
+        .login-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(201, 169, 97, 0.4);
+        }
+
+        .login-btn:disabled {
+            background: rgba(255, 255, 255, 0.2);
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .signup-btn {
+            width: 100%;
+            padding: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 8px;
+            background: transparent;
+            color: #fff;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .signup-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .error-message {
+            background: rgba(248, 113, 113, 0.2);
+            border: 1px solid rgba(248, 113, 113, 0.5);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 20px;
+            color: #fecaca;
+            text-align: center;
+            display: none;
+        }
+
+        .success-message {
+            background: rgba(74, 222, 128, 0.2);
+            border: 1px solid rgba(74, 222, 128, 0.5);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 20px;
+            color: #bbf7d0;
+            text-align: center;
+            display: none;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .spinner {
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 2px solid #fff;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .auth-toggle {
+            text-align: center;
+            margin-top: 20px;
+            color: #a8d8ff;
+        }
+
+        .auth-toggle a {
+            color: #fff;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .auth-toggle a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-header">
+            <h1>Gold Rain Investment</h1>
+            <p>Professional Private Debt Investment Platform</p>
+        </div>
+
+        <div id="errorMessage" class="error-message"></div>
+        <div id="successMessage" class="success-message"></div>
+        <div id="loadingIndicator" class="loading">
+            <div class="spinner"></div>
+            <span>处理中...</span>
+        </div>
+
+        <!-- Login Form -->
+        <form id="loginForm">
+            <div class="form-group">
+                <label for="email">邮箱</label>
+                <input type="email" id="email" placeholder="请输入您的邮箱" required>
+            </div>
+            <div class="form-group">
+                <label for="password">密码</label>
+                <input type="password" id="password" placeholder="请输入您的密码" required>
+            </div>
+            <button type="submit" id="loginBtn" class="login-btn">登录</button>
+        </form>
+
+        <!-- Sign Up Form (hidden by default) -->
+        <form id="signupForm" style="display: none;">
+            <div class="form-group">
+                <label for="signupEmail">邮箱</label>
+                <input type="email" id="signupEmail" placeholder="请输入您的邮箱" required>
+            </div>
+            <div class="form-group">
+                <label for="signupPassword">密码</label>
+                <input type="password" id="signupPassword" placeholder="创建密码" required>
+            </div>
+            <div class="form-group">
+                <label for="confirmPassword">确认密码</label>
+                <input type="password" id="confirmPassword" placeholder="确认您的密码" required>
+            </div>
+            <button type="submit" id="signupBtn" class="login-btn">创建账户</button>
+        </form>
+
+        <!-- Verification Form (hidden by default) -->
+        <form id="verificationForm" style="display: none;">
+            <div class="form-group">
+                <label for="verificationCode">验证码</label>
+                <input type="text" id="verificationCode" placeholder="请输入6位验证码" required>
+            </div>
+            <button type="submit" id="verifyBtn" class="login-btn">验证账户</button>
+        </form>
+
+        <div class="auth-toggle">
+            <span id="authToggleText">还没有账户？</span>
+            <a href="#" id="authToggleLink">注册</a>
+        </div>
+    </div>
+
+    <script>
+        // AWS Configuration - Replace with your actual values
+        const AWS_CONFIG = {
+            region: 'us-east-1', // Replace with your region
+            userPoolId: 'us-east-1_7SLl7qkYW', // Replace with your User Pool ID
+            userPoolWebClientId: '1cicrektl5t4pacjdq2e2dq96s', // Replace with your App Client ID
+            identityPoolId: 'us-east-1:53f7a0f0-54ef-42f3-8f02-b9b7199924a6' // Replace with your Identity Pool ID
+        };
+
+        // Configure AWS
+        AWS.config.update({
+            region: AWS_CONFIG.region,
+            credentials: new AWS.CognitoIdentityCredentials({
+                IdentityPoolId: AWS_CONFIG.identityPoolId
+            })
+        });
+
+        // Initialize Cognito User Pool
+        const userPool = new AmazonCognitoIdentity.CognitoUserPool({
+            UserPoolId: AWS_CONFIG.userPoolId,
+            ClientId: AWS_CONFIG.userPoolWebClientId
+        });
+
+        let currentUser = null;
+        let isSignupMode = false;
+        let pendingUser = null;
+
+        // DOM Elements
+        const loginForm = document.getElementById('loginForm');
+        const signupForm = document.getElementById('signupForm');
+        const verificationForm = document.getElementById('verificationForm');
+        const errorMessage = document.getElementById('errorMessage');
+        const successMessage = document.getElementById('successMessage');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const authToggleLink = document.getElementById('authToggleLink');
+        const authToggleText = document.getElementById('authToggleText');
+
+        // Utility Functions
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.style.display = 'block';
+            successMessage.style.display = 'none';
+        }
+
+        function showSuccess(message) {
+            successMessage.textContent = message;
+            successMessage.style.display = 'block';
+            errorMessage.style.display = 'none';
+        }
+
+        function hideMessages() {
+            errorMessage.style.display = 'none';
+            successMessage.style.display = 'none';
+        }
+
+        function showLoading() {
+            loadingIndicator.style.display = 'block';
+        }
+
+        function hideLoading() {
+            loadingIndicator.style.display = 'none';
+        }
+
+        function toggleAuthMode() {
+            isSignupMode = !isSignupMode;
+            if (isSignupMode) {
+                loginForm.style.display = 'none';
+                signupForm.style.display = 'block';
+                verificationForm.style.display = 'none';
+                authToggleText.textContent = '已有账户？';
+                authToggleLink.textContent = '登录';
+            } else {
+                loginForm.style.display = 'block';
+                signupForm.style.display = 'none';
+                verificationForm.style.display = 'none';
+                authToggleText.textContent = "还没有账户？";
+                authToggleLink.textContent = '注册';
+            }
+            hideMessages();
+        }
+
+        // Authentication Functions
+        function signIn(email, password) {
+            return new Promise((resolve, reject) => {
+                const userData = {
+                    Username: email,
+                    Pool: userPool
+                };
+
+                const cognitoUser = new AmazonCognitoIdentity.CognitoUser(userData);
+                const authenticationDetails = new AmazonCognitoIdentity.AuthenticationDetails({
+                    Username: email,
+                    Password: password
+                });
+
+                cognitoUser.authenticateUser(authenticationDetails, {
+                    onSuccess: (result) => {
+                        currentUser = cognitoUser;
+                        resolve(result);
+                    },
+                    onFailure: (err) => {
+                        reject(err);
+                    }
+                });
+            });
+        }
+
+        function signUp(email, password) {
+            return new Promise((resolve, reject) => {
+                userPool.signUp(email, password, [], null, (err, result) => {
+                    if (err) {
+                        reject(err);
+                        return;
+                    }
+                    pendingUser = result.user;
+                    resolve(result);
+                });
+            });
+        }
+
+        function confirmSignUp(verificationCode) {
+            return new Promise((resolve, reject) => {
+                if (!pendingUser) {
+                    reject(new Error('未找到待验证用户'));
+                    return;
+                }
+
+                pendingUser.confirmRegistration(verificationCode, true, (err, result) => {
+                    if (err) {
+                        reject(err);
+                        return;
+                    }
+                    resolve(result);
+                });
+            });
+        }
+
+        // Event Listeners
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            hideMessages();
+            showLoading();
+
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+
+            try {
+                await signIn(email, password);
+                showSuccess('登录成功！正在跳转...');
+                setTimeout(() => {
+                    window.location.href = 'dashboard.html';
+                }, 1500);
+            } catch (error) {
+                showError(error.message || '登录失败，请重试。');
+            } finally {
+                hideLoading();
+            }
+        });
+
+        signupForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            hideMessages();
+
+            const email = document.getElementById('signupEmail').value;
+            const password = document.getElementById('signupPassword').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+
+            if (password !== confirmPassword) {
+                showError('密码不匹配。');
+                return;
+            }
+
+            if (password.length < 8) {
+                showError('密码至少需要8个字符。');
+                return;
+            }
+
+            showLoading();
+
+            try {
+                await signUp(email, password);
+                showSuccess('账户创建成功！请检查您的邮箱获取验证码。');
+                signupForm.style.display = 'none';
+                verificationForm.style.display = 'block';
+            } catch (error) {
+                showError(error.message || '注册失败，请重试。');
+            } finally {
+                hideLoading();
+            }
+        });
+
+        verificationForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            hideMessages();
+            showLoading();
+
+            const verificationCode = document.getElementById('verificationCode').value;
+
+            try {
+                await confirmSignUp(verificationCode);
+                showSuccess('邮箱验证成功！您现在可以登录了。');
+                setTimeout(() => {
+                    toggleAuthMode();
+                }, 2000);
+            } catch (error) {
+                showError(error.message || '验证失败，请重试。');
+            } finally {
+                hideLoading();
+            }
+        });
+
+        authToggleLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            toggleAuthMode();
+        });
+
+        // Check if user is already authenticated
+        window.addEventListener('load', () => {
+            const cognitoUser = userPool.getCurrentUser();
+            if (cognitoUser) {
+                cognitoUser.getSession((err, session) => {
+                    if (err) {
+                        console.log('No valid session found');
+                        return;
+                    }
+                    if (session.isValid()) {
+                        window.location.href = 'dashboard.html';
+                    }
+                });
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+{
+    "userId": "us-east-1:0458d478-3091-70c5-a70d-92c8ed3c7965",
+    "email": "leoyu6666@gmail.com",
+    "createdAt": "2025-01-18T00:00:00.000Z",
+    "updatedAt": "2025-01-18T12:00:00.000Z",
+    "holdings": {
+      "BOND": {
+        "nominalPrincipal": 101303, 
+        "actualTradeAmount": 100000,
+        "shares": 85561,
+        "avgCost": 96.50,
+        "purchaseDate": "2026-05-15T00:00:00.000Z"
+      }
+    },
+    "watchlist": [],
+    "settings": {
+      "currency": "USD",
+      "theme": "dark",
+      "notifications": true
+    }
+  }

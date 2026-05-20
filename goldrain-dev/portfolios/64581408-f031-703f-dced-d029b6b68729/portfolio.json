@@ -1,0 +1,21 @@
+{
+    "userId": "us-east-1:64581408-f031-703f-dced-d029b6b68729",
+    "email": "275688534@qq.com",
+    "createdAt": "2025-01-18T00:00:00.000Z",
+    "updatedAt": "2025-01-18T12:00:00.000Z",
+    "holdings": {
+      "BOND": {
+        "nominalPrincipal": 303909, 
+        "actualTradeAmount": 300000,
+        "shares": 85561,
+        "avgCost": 96.50,
+        "purchaseDate": "2026-05-15T00:00:00.000Z"
+      }
+    },
+    "watchlist": [],
+    "settings": {
+      "currency": "USD",
+      "theme": "dark",
+      "notifications": true
+    }
+  }
