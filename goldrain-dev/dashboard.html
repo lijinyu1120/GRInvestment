@@ -157,6 +157,24 @@
             color: #a8d8ff;
             margin-bottom: 15px;
             font-weight: 500;
+            line-height: 1.3;
+        }
+
+        .stat-en-label {
+            font-size: 0.78em;
+            color: rgba(168, 216, 255, 0.55);
+            font-weight: 400;
+            letter-spacing: 0.4px;
+            margin-top: 10px;
+        }
+
+        .section-header h2 .en-sub {
+            display: block;
+            font-size: 0.48em;
+            color: rgba(168, 216, 255, 0.6);
+            font-weight: 400;
+            letter-spacing: 0.5px;
+            margin-top: 4px;
         }
 
         .stat-value {
@@ -722,25 +740,25 @@
             <div class="portfolio-summary">
                 <div class="portfolio-stats">
                     <div class="stat-card">
-                        <h3>持仓</h3>
-                        <div class="stat-value neutral" id="holdingsCount">0</div>
-                        <div class="stat-change">Quantity</div>
+                        <h3>基金净值</h3>
+                        <div class="stat-value neutral" id="navValue">$0.00</div>
+                        <div class="stat-en-label">Net Asset Value</div>
+                    </div>
+                    <div class="stat-card gain-loss" id="totalReturnCard">
+                        <h3>累计收益</h3>
+                        <div class="stat-value neutral" id="totalReturn">$0.00</div>
+                        <div class="stat-change" id="totalReturnPercent" style="font-size: 1.1em; font-weight: 600; margin-top: 5px;">0.00%</div>
+                        <div class="stat-en-label">Total Return</div>
                     </div>
                     <div class="stat-card">
-                        <h3>价格</h3>
-                        <div class="stat-value neutral" id="unitPrice">$0.00</div>
-                        <div class="stat-change">Unit Price</div>
+                        <h3>债券价格</h3>
+                        <div class="stat-value neutral" id="bondPriceDisplay">0.000</div>
+                        <div class="stat-en-label">Bond Price (Mid)</div>
                     </div>
                     <div class="stat-card">
-                        <h3>净值</h3>
-                        <div class="stat-value neutral" id="totalValue">$0.00</div>
-                        <div class="stat-change">Net amount</div>
-                    </div>
-                    <div class="stat-card gain-loss">
-                        <h3>盈亏</h3>
-                        <div class="stat-value neutral" id="totalGainLoss">$0.00</div>
-                        <div class="stat-change" id="totalGainLossPercent" style="font-size: 1.1em; font-weight: 600; margin-top: 5px;">0.00%</div>
-                        <div style="font-size: 0.85em; color: #a8d8ff; margin-top: 3px;">Gain/Loss</div>
+                        <h3>到期收益率</h3>
+                        <div class="stat-value neutral" id="yieldToMaturity">0.00%</div>
+                        <div class="stat-en-label">Yield to Maturity</div>
                     </div>
                 </div>
             </div>
@@ -749,7 +767,7 @@
                 <!-- Price Chart Section -->
                 <div class="transactions-section">
                     <div class="section-header">
-                        <h2>价格走势图</h2>
+                        <h2>债券行情走势<span class="en-sub">Bond Market Trend</span></h2>
                         <button class="add-stock-btn" onclick="updatePricesManually()" id="updatePricesBtn">🔄 刷新数据</button>
                     </div>
                     
@@ -758,7 +776,7 @@
                     </div>
                 </div>
 
-                <!-- Simplified Bond Data Section -->
+                <!-- Performance Attribution Section -->
                 <div class="holdings-section">
                     <div id="bondDataTable">
                         <div class="empty-state">
@@ -777,6 +795,7 @@
         let priceService = null;
         let priceUpdater = null;
         let priceChart = null;
+        let ytmData = []; // Stores YTM values parallel to chart data points
 
         // Initialize the application
         async function initializeApp() {
@@ -890,24 +909,21 @@
         // Load and display portfolio data
         async function loadPortfolioData() {
             try {
-                // Get current bond price first
-                let currentBondPrice = null;
+                // Get complete latest bond price data (price, accrued interest, YTM, etc.)
+                let latestBondData = null;
                 if (priceService) {
                     try {
-                        const bondPriceData = await priceService.getLatestBondPrice();
-                        if (bondPriceData && bondPriceData.midPrice) {
-                            currentBondPrice = bondPriceData.midPrice;
-                        }
+                        latestBondData = await priceService.getLatestBondPrice();
                     } catch (error) {
                         console.warn('Failed to get current bond price:', error);
                     }
                 }
 
-                // Update portfolio summary with current price
-                const summary = portfolioManager.getPortfolioSummary(currentBondPrice);
-                updatePortfolioSummary(summary);
+                // Update portfolio summary with full bond data
+                updatePortfolioSummary(latestBondData);
 
                 // Update holdings table with current price
+                const currentBondPrice = latestBondData ? latestBondData.midPrice : null;
                 const holdings = portfolioManager.getHoldingsArray(currentBondPrice);
                 updateHoldingsDisplay(holdings);
 
@@ -941,7 +957,8 @@
         }
 
         // Update portfolio summary display
-        function updatePortfolioSummary(summary) {
+        // latestBondData: result from priceService.getLatestBondPrice()
+        function updatePortfolioSummary(latestBondData) {
             // Get bond holding data from portfolio
             const bondHolding = portfolioManager.portfolio.holdings['BOND'];
             if (!bondHolding) {
@@ -949,79 +966,102 @@
                 return;
             }
 
-            const shares = bondHolding.shares || 0;
-            const avgCost = bondHolding.avgCost || 0;
+            const nominalPrincipal = bondHolding.nominalPrincipal || 0; // 名义本金 (face value)
+            const actualTradeAmount = bondHolding.actualTradeAmount || 0; // 实际成本 (actual cost paid)
 
-            // Get current bond price for unit price display
-            let currentBondPrice = 0;
-            if (priceService) {
-                try {
-                    const bondPriceData = priceService.getLatestBondPrice();
-                    if (bondPriceData && bondPriceData.midPrice) {
-                        currentBondPrice = bondPriceData.midPrice;
-                    }
-                } catch (error) {
-                    console.warn('Failed to get current bond price for display:', error);
-                }
+            // ── 债券价格 & 到期收益率 (直接从 bond_values_093027 最新数据取) ──
+            let midPrice = null;
+            let ytm = null;
+            let accruedInterest = 0;
+
+            if (latestBondData) {
+                midPrice = latestBondData.midPrice || null;
+                ytm = latestBondData.midYTM || null;
+                // 应付利息 per 100 face value (cumulative since last coupon)
+                accruedInterest = parseFloat(latestBondData.accruedInterest) || 0;
             }
 
-            // If no current price available, use the summary's calculated current price
-            if (currentBondPrice === 0 && summary.totalValue > 0 && shares > 0) {
-                currentBondPrice = summary.totalValue / shares;
+            // ── 基金净值 (NAV) ──
+            // NAV = 名义本金 × (当前净价 + 应付利息) / 100
+            // 即全价（dirty price）× 名义本金 / 100
+            let nav = null;
+            if (nominalPrincipal > 0 && midPrice !== null) {
+                nav = nominalPrincipal * (midPrice + accruedInterest) / 100;
             }
 
-            // Calculate values based on portfolio structure
-            // Bond prices are displayed as 94.5 but actual calculation uses 0.945 (divided by 100)
-            const actualCurrentPrice = currentBondPrice / 100; // Convert display price to actual price
-            const actualAvgCost = avgCost / 100; // Convert display cost to actual cost
-            
-            const netAmount = shares * actualCurrentPrice; // Current market value (净值)
-            const totalCost = shares * actualAvgCost; // Original investment cost
-            const gainLoss = netAmount - totalCost; // Profit/Loss (盈亏)
-            const gainLossPercent = totalCost > 0 ? (gainLoss / totalCost) * 100 : 0;
+            // ── 累计收益 (Total Return) ──
+            // Total Return = NAV - 实际投资成本
+            let totalReturn = null;
+            let totalReturnPercent = null;
+            if (nav !== null && actualTradeAmount > 0) {
+                totalReturn = nav - actualTradeAmount;
+                totalReturnPercent = (totalReturn / actualTradeAmount) * 100;
+            }
 
-            // Display values
-            document.getElementById('holdingsCount').textContent = shares.toLocaleString();
-            document.getElementById('unitPrice').textContent = `$${currentBondPrice.toFixed(2)}`; // Display original price
-            document.getElementById('totalValue').textContent = `$${netAmount.toFixed(2)}`;
-            document.getElementById('totalGainLoss').textContent = `$${gainLoss.toFixed(2)}`;
-            document.getElementById('totalGainLossPercent').textContent = `${gainLossPercent.toFixed(2)}%`;
+            // ── 渲染四个卡片 ──
 
-            // Update colors and card styling based on gain/loss
-            const gainLossElement = document.getElementById('totalGainLoss');
-            const gainLossPercentElement = document.getElementById('totalGainLossPercent');
-            const gainLossCard = gainLossElement.closest('.stat-card');
-            
-            if (gainLoss > 0) {
-                gainLossElement.className = 'stat-value positive';
-                gainLossPercentElement.style.color = '#4ade80';
-                gainLossPercentElement.style.fontSize = '1.1em';
-                gainLossPercentElement.style.fontWeight = '600';
-                gainLossCard.className = 'stat-card gain-loss';
-            } else if (gainLoss < 0) {
-                gainLossElement.className = 'stat-value negative';
-                gainLossPercentElement.style.color = '#f87171';
-                gainLossPercentElement.style.fontSize = '1.1em';
-                gainLossPercentElement.style.fontWeight = '600';
-                gainLossCard.className = 'stat-card gain-loss negative';
+            // 1. 基金净值
+            const navEl = document.getElementById('navValue');
+            if (nav !== null) {
+                navEl.textContent = `$${nav.toFixed(2)}`;
             } else {
-                gainLossElement.className = 'stat-value neutral';
-                gainLossPercentElement.style.color = '#fff';
-                gainLossPercentElement.style.fontSize = '1.1em';
-                gainLossPercentElement.style.fontWeight = '600';
-                gainLossCard.className = 'stat-card gain-loss';
+                navEl.textContent = '—';
+            }
+
+            // 2. 累计收益
+            const returnEl = document.getElementById('totalReturn');
+            const returnPctEl = document.getElementById('totalReturnPercent');
+            const returnCard = document.getElementById('totalReturnCard');
+
+            if (totalReturn !== null) {
+                const sign = totalReturn >= 0 ? '+' : '';
+                returnEl.textContent = `${sign}$${totalReturn.toFixed(2)}`;
+                returnPctEl.textContent = `${sign}${totalReturnPercent.toFixed(2)}%`;
+
+                if (totalReturn > 0) {
+                    returnEl.className = 'stat-value positive';
+                    returnPctEl.style.color = '#4ade80';
+                    returnCard.className = 'stat-card gain-loss';
+                } else if (totalReturn < 0) {
+                    returnEl.className = 'stat-value negative';
+                    returnPctEl.style.color = '#f87171';
+                    returnCard.className = 'stat-card gain-loss negative';
+                } else {
+                    returnEl.className = 'stat-value neutral';
+                    returnPctEl.style.color = '#fff';
+                    returnCard.className = 'stat-card gain-loss';
+                }
+            } else {
+                returnEl.textContent = '—';
+                returnPctEl.textContent = '—';
+            }
+
+            // 3. 债券价格
+            const priceEl = document.getElementById('bondPriceDisplay');
+            if (midPrice !== null) {
+                priceEl.textContent = midPrice.toFixed(3);
+            } else {
+                priceEl.textContent = '—';
+            }
+
+            // 4. 到期收益率
+            const ytmEl = document.getElementById('yieldToMaturity');
+            if (ytm !== null) {
+                ytmEl.textContent = `${ytm.toFixed(3)}%`;
+            } else {
+                ytmEl.textContent = '—';
             }
 
             console.log('Portfolio Summary Updated:', {
-                shares,
-                displayAvgCost: avgCost,
-                actualAvgCost: actualAvgCost,
-                displayCurrentPrice: currentBondPrice,
-                actualCurrentPrice: actualCurrentPrice,
-                netAmount,
-                totalCost,
-                gainLoss,
-                gainLossPercent: gainLossPercent.toFixed(2) + '%'
+                nominalPrincipal,
+                actualTradeAmount,
+                midPrice,
+                accruedInterest,
+                dirtyPrice: midPrice !== null ? (midPrice + accruedInterest).toFixed(3) : null,
+                nav: nav !== null ? nav.toFixed(2) : null,
+                totalReturn: totalReturn !== null ? totalReturn.toFixed(2) : null,
+                totalReturnPercent: totalReturnPercent !== null ? totalReturnPercent.toFixed(3) + '%' : null,
+                ytm
             });
         }
 
@@ -1134,7 +1174,7 @@
                     data: {
                         labels: [],
                         datasets: [{
-                            label: '中间价',
+                            label: '净价 / Clean Price',
                             data: [],
                             borderColor: '#c9a961',
                             backgroundColor: 'rgba(201, 169, 97, 0.1)',
@@ -1145,11 +1185,15 @@
                             pointBorderColor: '#dcc984',
                             pointBorderWidth: 2,
                             pointRadius: 4,
-                            pointHoverRadius: 6
+                            pointHoverRadius: 8
                         }]
                     },
                     options: {
                         responsive: true,
+                        interaction: {
+                            mode: 'index',
+                            intersect: false
+                        },
                         plugins: {
                             legend: {
                                 labels: {
@@ -1158,10 +1202,43 @@
                             },
                             title: {
                                 display: true,
-                                text: '债券价格走势',
+                                text: ['净价历史走势', 'Clean Price Historical Trend'],
                                 color: '#a8d8ff',
-                                font: {
-                                    size: 16
+                                font: [
+                                    { size: 16, weight: '600' },
+                                    { size: 11, weight: '400' }
+                                ],
+                                padding: { bottom: 12 }
+                            },
+                            tooltip: {
+                                backgroundColor: 'rgba(10, 25, 41, 0.95)',
+                                borderColor: 'rgba(201, 169, 97, 0.5)',
+                                borderWidth: 1,
+                                titleColor: '#a8d8ff',
+                                bodyColor: '#fff',
+                                padding: 12,
+                                callbacks: {
+                                    title: function(items) {
+                                        return items[0].label;
+                                    },
+                                    label: function(item) {
+                                        const idx = item.dataIndex;
+                                        const price = Number(item.raw).toFixed(3);
+                                        const ytm = (ytmData[idx] !== undefined && !isNaN(ytmData[idx]))
+                                            ? ytmData[idx].toFixed(3) + '%'
+                                            : '—';
+                                        return [
+                                            `  净价 / Clean Price：${price}`,
+                                            `  到期收益率 / YTM：${ytm}`
+                                        ];
+                                    },
+                                    labelColor: function() {
+                                        return {
+                                            borderColor: '#c9a961',
+                                            backgroundColor: '#c9a961',
+                                            borderRadius: 2
+                                        };
+                                    }
                                 }
                             }
                         },
@@ -1219,15 +1296,16 @@
                     const date = new Date(item.timestamp);
                     return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
                 });
-                
-                const buyPrices = bondHistory.map(item => item.buyPrice);
+
                 const midPrices = bondHistory.map(item => item.midPrice);
-                const sellPrices = bondHistory.map(item => item.sellPrice);
-                
+
+                // Store YTM data globally for tooltip access
+                ytmData = bondHistory.map(item => item.midYTM);
+
                 if (priceChart && priceChart.data) {
                     priceChart.data.labels = labels;
                     priceChart.data.datasets[0].data = midPrices;
-                    
+
                     priceChart.update();
                     console.log('Price chart updated successfully with', bondHistory.length, 'data points');
                 }
@@ -1236,144 +1314,121 @@
             }
         }
 
-        // Load bond data table from AWS service
+        // Render the daily performance attribution panel
         async function loadBondDataTable() {
+            const container = document.getElementById('bondDataTable');
+            container.innerHTML = `<div class="empty-state"><h3>正在计算收益归因...</h3></div>`;
+
             try {
-                const bondDataTable = document.getElementById('bondDataTable');
-                bondDataTable.innerHTML = `
-                    <div class="empty-state">
-                        <h3>正在加载债券数据...</h3>
-                        <p>正在获取最新债券价格信息</p>
+                if (!priceService) throw new Error('Price service not available');
+
+                // Need last two trading days to compute daily changes
+                const history = await priceService.getBondPriceHistory(14);
+                if (!history || history.length < 2) throw new Error('Insufficient history data');
+
+                const today   = history[history.length - 1];
+                const yesterday = history[history.length - 2];
+
+                // Nominal principal from portfolio (per-client)
+                const bondHolding = portfolioManager?.portfolio?.holdings?.['BOND'];
+                const nominalPrincipal = bondHolding?.nominalPrincipal || 0;
+
+                // ── Three components ──
+                // 1. Coupon Accrual (票息收益): daily increment of accrued interest × face value
+                const couponAccrual = nominalPrincipal * (today.accruedInterest - yesterday.accruedInterest) / 100;
+
+                // 2. Price Movement (市值变动): daily clean price change × face value
+                const priceMovement = nominalPrincipal * (today.midPrice - yesterday.midPrice) / 100;
+
+                // 3. FX Impact (汇率影响): USD-denominated, always $0
+                const fxImpact = 0;
+
+                // 4. Today's P&L (当日收益)
+                const todayPL = couponAccrual + priceMovement + fxImpact;
+
+                // ── Helpers ──
+                function fmtAmt(val) {
+                    const r = Math.round(val);
+                    const sign = r > 0 ? '+' : '';
+                    return `${sign}$${r.toLocaleString()}`;
+                }
+                function amtColor(val) {
+                    if (val > 0.5)  return '#4ade80';
+                    if (val < -0.5) return '#f87171';
+                    return '#fff';
+                }
+
+                // ── Row builder ──
+                function row(zhLabel, enLabel, value, isBold = false) {
+                    const color = amtColor(value);
+                    const weight = isBold ? '700' : '600';
+                    const fontSize = isBold ? '1.55em' : '1.45em';
+                    return `
+                        <div style="display:flex; justify-content:space-between; align-items:center;
+                                    padding: 18px 10px;">
+                            <div style="text-align:left; line-height:1.4;">
+                                <div style="color:#fff; font-size:1em; font-weight:500;">${zhLabel}</div>
+                                <div style="color:rgba(168,216,255,0.55); font-size:0.75em; letter-spacing:0.4px; margin-top:3px;">${enLabel}</div>
+                            </div>
+                            <div style="color:${color}; font-size:${fontSize}; font-weight:${weight}; letter-spacing:-0.5px;">
+                                ${fmtAmt(value)}
+                            </div>
+                        </div>`;
+                }
+
+                function divider() {
+                    return `<div style="border-top:1px solid rgba(255,255,255,0.12); margin:0 10px;"></div>`;
+                }
+
+                const todayDate = new Date(today.timestamp).toLocaleDateString('zh-CN',
+                    { year:'numeric', month:'long', day:'numeric' });
+
+                container.innerHTML = `
+                    <div style="padding: 10px 15px;">
+
+                        <!-- Section title -->
+                        <div style="text-align:center; margin-bottom:28px;">
+                            <div style="color:#a8d8ff; font-size:1.8em; font-weight:600; line-height:1.2;">收益归因</div>
+                            <div style="color:rgba(168,216,255,0.55); font-size:0.82em; letter-spacing:0.6px; margin-top:5px;">
+                                Today's Performance
+                            </div>
+                            <div style="color:rgba(168,216,255,0.4); font-size:0.75em; margin-top:8px;">
+                                ${todayDate}
+                            </div>
+                        </div>
+
+                        <!-- Attribution rows -->
+                        <div style="background:rgba(0,0,0,0.25); border-radius:16px;
+                                    border:1px solid rgba(255,255,255,0.1); overflow:hidden;">
+
+                            ${row('票息收益',  'Coupon Accrual',  couponAccrual)}
+                            ${divider()}
+                            ${row('市值变动',  'Price Movement',  priceMovement)}
+                            ${divider()}
+                            ${row('汇率影响',  'FX Impact',       fxImpact)}
+
+                            <!-- Total row -->
+                            <div style="border-top:2px solid rgba(255,255,255,0.22); margin-top:4px;
+                                        background:rgba(0,0,0,0.2);">
+                                ${row('当日收益', "Today's P&L", todayPL, true)}
+                            </div>
+                        </div>
+
                     </div>
                 `;
 
-                if (!priceService) {
-                    throw new Error('Price service not available');
-                }
+                console.log('Performance attribution loaded:', {
+                    date: todayDate, couponAccrual, priceMovement, fxImpact, todayPL
+                });
 
-                const currentData = await priceService.getCompleteBondData();
-                if (!currentData) {
-                    throw new Error('No valid bond data found');
-                }
-                
-                // Create simplified bond data layout
-                const tableHtml = `
-                    <div style="text-align: center; margin-bottom: 30px;">
-                        <h2 style="color: #a8d8ff; margin-bottom: 15px; font-size: 1.8em;">最新债券价格数据</h2>
-                        <div style="color: #a8d8ff; font-size: 1em; margin-bottom: 30px;">
-                            更新时间: ${currentData.timestamp}
-                        </div>
-                        
-                        <!-- Main Price Header -->
-                        <div style="background: rgba(0, 0, 0, 0.4); border-radius: 15px; padding: 20px; margin-bottom: 25px;">
-                            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; text-align: center;">
-                                <div>
-                                    <div style="color: #a8d8ff; font-size: 1.1em; margin-bottom: 10px;">买价</div>
-                                    <div style="color: #fff; font-size: 2.2em; font-weight: bold;">
-                                        ${parseFloat(currentData['价格_买价']).toFixed(3)}
-                                    </div>
-                                </div>
-                                <div>
-                                    <div style="color: #a8d8ff; font-size: 1.1em; margin-bottom: 10px;">中间价</div>
-                                    <div style="color: #fff; font-size: 2.2em; font-weight: bold;">
-                                        ${parseFloat(currentData['价格_中间价']).toFixed(3)}
-                                    </div>
-                                </div>
-                                <div>
-                                    <div style="color: #a8d8ff; font-size: 1.1em; margin-bottom: 10px;">卖价</div>
-                                    <div style="color: #fff; font-size: 2.2em; font-weight: bold;">
-                                        ${parseFloat(currentData['价格_卖价']).toFixed(3)}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Three Cards Layout -->
-                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;">
-                            <!-- Yield Card -->
-                            <div style="background: rgba(0, 0, 0, 0.3); border-radius: 15px; padding: 25px;">
-                                <h3 style="color: #a8d8ff; margin-bottom: 20px; font-size: 1.3em;">收益率 (%)</h3>
-                                <div style="margin-bottom: 15px;">
-                                    <div style="color: #a8d8ff; font-size: 0.9em; margin-bottom: 5px;">买价</div>
-                                    <div style="color: #fff; font-size: 1.4em; font-weight: bold;">
-                                        ${parseFloat(currentData['到期收益率(YTM)_买价']).toFixed(2)}
-                                    </div>
-                                </div>
-                                <div style="margin-bottom: 15px;">
-                                    <div style="color: #a8d8ff; font-size: 0.9em; margin-bottom: 5px;">中间价</div>
-                                    <div style="color: #fff; font-size: 1.4em; font-weight: bold;">
-                                        ${parseFloat(currentData['到期收益率(YTM)_中间价']).toFixed(2)}
-                                    </div>
-                                </div>
-                                <div>
-                                    <div style="color: #a8d8ff; font-size: 0.9em; margin-bottom: 5px;">卖价</div>
-                                    <div style="color: #fff; font-size: 1.4em; font-weight: bold;">
-                                        ${parseFloat(currentData['到期收益率(YTM)_卖价']).toFixed(2)}
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <!-- Change Amount Card -->
-                            <div style="background: rgba(0, 0, 0, 0.3); border-radius: 15px; padding: 25px;">
-                                <h3 style="color: #a8d8ff; margin-bottom: 20px; font-size: 1.3em;">涨跌额</h3>
-                                <div style="margin-bottom: 15px;">
-                                    <div style="color: #a8d8ff; font-size: 0.9em; margin-bottom: 5px;">买价</div>
-                                    <div style="color: ${parseFloat(currentData['涨跌额_买价'] || 0) >= 0 ? '#4ade80' : '#f87171'}; font-size: 1.4em; font-weight: bold;">
-                                        ${parseFloat(currentData['涨跌额_买价'] || 0) >= 0 ? '+' : ''}${parseFloat(currentData['涨跌额_买价'] || 0).toFixed(3)}
-                                    </div>
-                                </div>
-                                <div style="margin-bottom: 15px;">
-                                    <div style="color: #a8d8ff; font-size: 0.9em; margin-bottom: 5px;">中间价</div>
-                                    <div style="color: ${parseFloat(currentData['涨跌额_中间价'] || 0) >= 0 ? '#4ade80' : '#f87171'}; font-size: 1.4em; font-weight: bold;">
-                                        ${parseFloat(currentData['涨跌额_中间价'] || 0) >= 0 ? '+' : ''}${parseFloat(currentData['涨跌额_中间价'] || 0).toFixed(3)}
-                                    </div>
-                                </div>
-                                <div>
-                                    <div style="color: #a8d8ff; font-size: 0.9em; margin-bottom: 5px;">卖价</div>
-                                    <div style="color: ${parseFloat(currentData['涨跌额_卖价'] || 0) >= 0 ? '#4ade80' : '#f87171'}; font-size: 1.4em; font-weight: bold;">
-                                        ${parseFloat(currentData['涨跌额_卖价'] || 0) >= 0 ? '+' : ''}${parseFloat(currentData['涨跌额_卖价'] || 0).toFixed(3)}
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <!-- Duration Card -->
-                            <div style="background: rgba(0, 0, 0, 0.3); border-radius: 15px; padding: 25px;">
-                                <h3 style="color: #a8d8ff; margin-bottom: 20px; font-size: 1.3em;">久期</h3>
-                                <div style="margin-bottom: 15px;">
-                                    <div style="color: #a8d8ff; font-size: 0.9em; margin-bottom: 5px;">买价</div>
-                                    <div style="color: #fff; font-size: 1.4em; font-weight: bold;">
-                                        ${parseFloat(currentData['修正久期_买价']).toFixed(2)}
-                                    </div>
-                                </div>
-                                <div style="margin-bottom: 15px;">
-                                    <div style="color: #a8d8ff; font-size: 0.9em; margin-bottom: 5px;">中间价</div>
-                                    <div style="color: #fff; font-size: 1.4em; font-weight: bold;">
-                                        ${parseFloat(currentData['修正久期_中间价']).toFixed(2)}
-                                    </div>
-                                </div>
-                                <div>
-                                    <div style="color: #a8d8ff; font-size: 0.9em; margin-bottom: 5px;">卖价</div>
-                                    <div style="color: #fff; font-size: 1.4em; font-weight: bold;">
-                                        ${parseFloat(currentData['修正久期_卖价']).toFixed(2)}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                `;
-                
-                bondDataTable.innerHTML = tableHtml;
-                
             } catch (error) {
-                console.error('Failed to load bond data:', error);
-                const bondDataTable = document.getElementById('bondDataTable');
-                bondDataTable.innerHTML = `
+                console.error('Failed to load performance attribution:', error);
+                container.innerHTML = `
                     <div class="empty-state">
                         <h3>加载失败</h3>
-                        <p>无法加载债券数据: ${error.message}</p>
-                        <button class="add-stock-btn" onclick="loadBondDataTable()" style="margin-top: 15px;">重试</button>
-                    </div>
-                `;
+                        <p>${error.message}</p>
+                        <button class="add-stock-btn" onclick="loadBondDataTable()" style="margin-top:15px;">重试</button>
+                    </div>`;
             }
         }
 

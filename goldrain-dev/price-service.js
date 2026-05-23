@@ -86,6 +86,8 @@ class PriceDataService {
                     buyPrice: parseFloat(item.价格_买价),
                     midPrice: parseFloat(item.价格_中间价),
                     sellPrice: parseFloat(item.价格_卖价),
+                    midYTM: parseFloat(item['到期收益率(YTM)_中间价']),
+                    accruedInterest: parseFloat(item['应付利息']) || 0,
                     volume: parseFloat(item['30天成交量'] || 0)
                 }))
                 .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
